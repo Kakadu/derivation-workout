@@ -1,0 +1,3 @@
+PKG ocamlgraph
+SRC .
+B _build

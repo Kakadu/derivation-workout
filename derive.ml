@@ -80,7 +80,7 @@ module Grammar =
     module RuleMap = struct
       include Map.Make(RuleOrder)
       let add k v m =
-        Printf.printf "Adding with key '%s'\n%!" k;
+        (* Printf.printf "Adding with key '%s'\n%!" k; *)
         add k v m
     end
     type rules = pre_rule RuleMap.t
@@ -240,7 +240,8 @@ module Grammar =
          * if a symbol has a rule S -> [[ε];...] then its nullable or if
          * it references a rule already known to be nullable
          *)
-        RuleMap.fold g reachable_rules x in
+        RuleMap.fold g reachable_rules x
+      in
       fix eq f NullMap.empty
 
     let derive_x_nt x name = "d" ^ String.make 1 x ^ " ["^name^"]"
@@ -383,7 +384,8 @@ module Grammar =
       Printf.printf "================= Go recognize\n%!";
       let rec loop cur visited =
         match cur with
-        | [] ->  failwith "return answer"
+        | [] ->
+          failwith "return answer"
         | (((l,c,r),ebnf) as v) :: es ->
           printf "process edge (%d,%c,%d)\n" l c r;
           match derive_grm c ebnf with
@@ -391,6 +393,10 @@ module Grammar =
             printf "skipping edge (%d,%c,%d)\n" l c r;
             loop es (VS.add v visited)
           | d ->
+            printf "  -- ";
+            NullMap.iter (fun k _ -> printf "%s,\t%!" k) (compute_nullables d);
+            printf "\n";
+            printf "  -- start symbol of derived is '%s'\n%!" (d.start);
             let new_cur =
               List.fold_left  (fun acc e ->
                   let ans = (e,d) in
