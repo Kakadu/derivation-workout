@@ -16,7 +16,7 @@ module GraphDemos = struct
     include Graph.Persistent.Digraph.ConcreteBidirectionalLabeled(V)(E)
 
     let all_edges g =
-      fold_edges_e List.cons g []
+      fold_edges_e (fun x xs -> x :: xs) g []
   end
 
 
@@ -71,7 +71,7 @@ let (@@) xs ys = List.fold_left (fun zs x -> x ++ zs) ys xs
 module Grammar =
   struct
     type pattern   = Epsilon | Empty | Lit of char | NT of string
-    type pre_rule  = Rule of pattern list list | Derived of pre_rule (* Lazy.t *)
+    type pre_rule  = Rule of pattern list list | Derived of pre_rule Lazy.t
 
     module RuleOrder = struct
       type t = string
@@ -112,7 +112,7 @@ module Grammar =
 
     let (!!) r = match r with
     | Rule _ -> r
-    | Derived cont -> (* Lazy.force *) cont
+    | Derived cont -> Lazy.force cont
 
     let rec string_of_pre = function
       | Rule(ps_lists) -> "["^String.concat " | "
@@ -127,11 +127,11 @@ module Grammar =
           ) ps_lists
         )
       ^"]"
-      | Derived v  ->
-          "?<" ^ (string_of_pre  v) ^ ">"
-      (* | Derived v when Lazy.lazy_is_val v ->
-       *     "?<" ^ string_of_pre (Lazy.force v) ^ ">"
-       * | Derived v -> "?" *)
+      (*| Derived v  ->
+          "?<" ^ (string_of_pre  v) ^ ">"*)
+       | Derived v when Lazy.lazy_is_val v ->
+            "?<" ^ string_of_pre (Lazy.force v) ^ ">"
+        | Derived v -> "?" 
 
     let string_of_rule name pre_rule acc =
       (name ^ " ::= " ^ string_of_pre pre_rule) :: acc
@@ -152,7 +152,8 @@ module Grammar =
     (* Return the rules that can be reached from the start-node *)
     let get_reachable grm =
       let start_ps_lists =
-        try !!(RuleMap.find grm.start grm.rules)
+         try
+          !!(RuleMap.find grm.start grm.rules)
         with Not_found -> raise (Grammar_not_found grm.start)
       in
       let start_rules =
@@ -311,8 +312,8 @@ module Grammar =
           (*print_endline ("lazy_derive for " ^ rule_name);*)
           RuleMap.add
           (derive_x_nt x rule_name)
-          (* (Derived (lazy (derive_rule rule_name pre_rule))) *)
-          (Derived (derive_rule rule_name pre_rule))
+           (Derived (lazy (derive_rule rule_name pre_rule))) 
+(*          (Derived (derive_rule rule_name pre_rule))*)
           acc_rules
         end
       in
@@ -382,34 +383,43 @@ module Grammar =
 
     let graph_recog graph ebnf =
       Printf.printf "================= Go recognize\n%!";
-      let rec loop cur visited =
+      let rec loop cur visited result =
         match cur with
-        | [] ->
-          failwith "return answer"
+        | [] -> result
         | (((l,c,r),ebnf) as v) :: es ->
-          printf "process edge (%d,%c,%d)\n" l c r;
-          match derive_grm c ebnf with
-          | exception (Grammar_not_found s) ->
-            printf "skipping edge (%d,%c,%d)\n" l c r;
-            loop es (VS.add v visited)
-          | d ->
-            printf "  -- ";
-            NullMap.iter (fun k _ -> printf "%s,\t%!" k) (compute_nullables d);
-            printf "\n";
-            printf "  -- start symbol of derived is '%s'\n%!" (d.start);
+          printf "process edge (%d,%c,%d)\n%!" l c r;
+          try 
+            let d = derive_grm c ebnf in 
+            let res = NullMap.find d.start (compute_nullables d) in
+            let new_res = 
+              if (Some true = res) 
+              then                 
+               begin
+                 printf "%d ->* %d \n%!" l r;
+                 (l,r) :: result
+               end
+              else result
+            in
             let new_cur =
-              List.fold_left  (fun acc e ->
-                  let ans = (e,d) in
+              List.fold_left  (fun acc (l',c',r') ->
+                  let ans = ((l,c',r'),d) in
                   if VS.mem ans visited then acc
-                  else ans :: acc
+                  else List.append acc [ans]
                 )
                 es
                 (GraphDemos.G.succ_e graph r)
             in
-            loop new_cur (VS.add v visited)
+            loop new_cur (VS.add v visited) new_res
+          with
+            Grammar_not_found s ->
+            printf "skipping edge (%d,%c,%d)\n%!" l c r;
+            loop es (VS.add v visited) result
+          
+
       in
       let cur_start  = GraphDemos.G.all_edges graph |> List.map (fun e -> e,ebnf) in
-      loop cur_start VS.empty
+      let res = loop cur_start VS.empty [] in 
+      printf "Done\n";
   end
 
 (* let s_grm =
@@ -460,12 +470,12 @@ let graph_grm1 =
 
 
 let () = begin
-  let res = Grammar.graph_recog GraphDemos.demo2 graph_grm1 in
+  let res = Grammar.graph_recog GraphDemos.demo1 graph_grm1 in
   res
 
 end
 
-
+(*
 let gtree_grm =
   let open Grammar in
   (make_grm "GT") +>
@@ -523,9 +533,9 @@ let gtree_grm =
 
 
 
-
-(* let () = begin
- *   let res = Grammar.recognize "statement[const[int[a[]]],const[]]" gtree_grm in
- *   res
- *   (\*print_endline (string_of_bool (res = Some true))*\)
- * end *)
+ let () = begin
+    let res = Grammar.recognize "const[statement[const[int[a[]]],const[]]" gtree_grm in
+    res
+    (*print_endline (string_of_bool (res = Some true))*)
+  end 
+  *)
