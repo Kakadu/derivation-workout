@@ -152,9 +152,9 @@ module Grammar =
     (* Return the rules that can be reached from the start-node *)
     let get_reachable grm =
       let start_ps_lists =
-         (*try *)
+         try
           !!(RuleMap.find grm.start grm.rules)
-        (*with Not_found -> raise (Grammar_not_found grm.start)*)
+        with Not_found -> raise (Grammar_not_found grm.start)
       in
       let start_rules =
         RuleMap.add grm.start start_ps_lists RuleMap.empty in
@@ -387,18 +387,15 @@ module Grammar =
         match cur with
         | [] -> result
         | (((l,c,r),ebnf) as v) :: es ->
-          printf "process edge (%d,%c,%d)\n" l c r;
-          match derive_grm c ebnf with
-          | exception (Grammar_not_found s) ->
-            printf "skipping edge (%d,%c,%d)\n" l c r;
-            loop es (VS.add v visited) result
-          | d ->
+          printf "process edge (%d,%c,%d)\n%!" l c r;
+          try 
+            let d = derive_grm c ebnf in 
             let res = NullMap.find d.start (compute_nullables d) in
             let new_res = 
               if (Some true = res) 
               then                 
                begin
-                 printf "%d ->* %d \n" l r;
+                 printf "%d ->* %d \n%!" l r;
                  (l,r) :: result
                end
               else result
@@ -407,12 +404,18 @@ module Grammar =
               List.fold_left  (fun acc (l',c',r') ->
                   let ans = ((l,c',r'),d) in
                   if VS.mem ans visited then acc
-                  else ans :: acc
+                  else List.append acc [ans]
                 )
                 es
                 (GraphDemos.G.succ_e graph r)
             in
             loop new_cur (VS.add v visited) new_res
+          with
+            Grammar_not_found s ->
+            printf "skipping edge (%d,%c,%d)\n%!" l c r;
+            loop es (VS.add v visited) result
+          
+
       in
       let cur_start  = GraphDemos.G.all_edges graph |> List.map (fun e -> e,ebnf) in
       let res = loop cur_start VS.empty [] in 
@@ -467,7 +470,7 @@ let graph_grm1 =
 
 
 let () = begin
-  let res = Grammar.graph_recog GraphDemos.demo2 graph_grm1 in
+  let res = Grammar.graph_recog GraphDemos.demo1 graph_grm1 in
   res
 
 end
